@@ -25,7 +25,8 @@ let autoScrollActive = true;
 let activeFilters = [];  // Array of FilterCondition objects
 let availableFields = new Set(['message', 'level']);  // Discovered fields from logs
 let filterIdCounter = 0;  // For generating unique filter IDs
-let contextMenuTarget = null;  // { field, value, fileInfo? } for context menu actions
+// { field, value, fileInfo? } — fileInfo is only set when right-clicking JSON lines containing file paths
+let contextMenuTarget = null;
 
 // Filter operators
 const FILTER_OPERATORS = {
@@ -505,12 +506,7 @@ function createLogElement(log, index) {
     const message = document.createElement('span');
     message.className = 'log-message filterable';
     message.textContent = log.message;
-    // Right-click handler for filtering by message
-    message.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showContextMenu(e, 'message', log.message || '');
-    });
+    attachContextMenuHandler(message, 'message', log.message || '');
 
     header.appendChild(timestamp);
     header.appendChild(level);
@@ -612,12 +608,8 @@ function createJSONElement(obj, indent = 0) {
         // Right-click handler for filtering by field value
         const displayValue = value === null ? 'null' :
             typeof value === 'object' ? JSON.stringify(value) : String(value);
-        const fileInfo = parseFilePath(typeof value === 'string' ? value : null);
-        line.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showContextMenu(e, key, displayValue, fileInfo || null);
-        });
+        const fileInfo = typeof value === 'string' ? parseFilePath(value) : null;
+        attachContextMenuHandler(line, key, displayValue, fileInfo);
 
         // Key
         const keySpan = document.createElement('span');
@@ -631,8 +623,8 @@ function createJSONElement(obj, indent = 0) {
         colonSpan.textContent = ': ';
         line.appendChild(colonSpan);
 
-        // Value (no longer needs individual click handler)
-        const valueSpan = createValueElement(value);
+        // Value — pass fileInfo to avoid re-parsing
+        const valueSpan = createValueElement(value, fileInfo);
         line.appendChild(valueSpan);
 
         // Comma
@@ -677,7 +669,8 @@ function parseFilePath(value) {
 }
 
 // Create value element with proper styling
-function createValueElement(value) {
+// fileInfo is optional — passed from createJSONElement to avoid redundant parseFilePath calls
+function createValueElement(value, fileInfo) {
     const span = document.createElement('span');
 
     if (value === null) {
@@ -690,9 +683,9 @@ function createValueElement(value) {
         span.className = 'json-number';
         span.textContent = value.toString();
     } else if (typeof value === 'string') {
-        // Check if this is a file path
-        const fileInfo = parseFilePath(value);
-        if (fileInfo) {
+        // Use pre-computed fileInfo if available, otherwise parse
+        const resolvedFileInfo = fileInfo !== undefined ? fileInfo : parseFilePath(value);
+        if (resolvedFileInfo) {
             span.className = 'json-string json-file-link';
             span.textContent = `"${value}"`;
             span.title = 'Click to open file';
@@ -700,8 +693,8 @@ function createValueElement(value) {
                 e.stopPropagation();
                 vscode.postMessage({
                     type: 'openFile',
-                    filePath: fileInfo.filePath,
-                    line: fileInfo.line
+                    filePath: resolvedFileInfo.filePath,
+                    line: resolvedFileInfo.line
                 });
             });
         } else {
@@ -1133,6 +1126,15 @@ function updateNoResultsState() {
 // CONTEXT MENU FUNCTIONS
 // ============================================
 
+// Attach a right-click context menu handler to an element
+function attachContextMenuHandler(element, field, value, fileInfo) {
+    element.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showContextMenu(e, field, value, fileInfo || null);
+    });
+}
+
 // Show context menu on right-click
 function showContextMenu(e, field, value, fileInfo) {
     contextMenuTarget = { field, value: String(value), fileInfo: fileInfo || null };
@@ -1154,13 +1156,9 @@ function showContextMenu(e, field, value, fileInfo) {
     const openFileItem = document.getElementById('contextMenuOpenFile');
     const fileSeparator = document.getElementById('contextMenuFileSeparator');
     if (openFileItem && fileSeparator) {
-        if (contextMenuTarget.fileInfo) {
-            openFileItem.classList.remove('hidden');
-            fileSeparator.classList.remove('hidden');
-        } else {
-            openFileItem.classList.add('hidden');
-            fileSeparator.classList.add('hidden');
-        }
+        const showFile = !!contextMenuTarget.fileInfo;
+        openFileItem.style.display = showFile ? '' : 'none';
+        fileSeparator.style.display = showFile ? '' : 'none';
     }
 
     // Position menu near click, but keep on screen
@@ -1201,10 +1199,10 @@ function handleContextMenuAction(action) {
 
     switch (action) {
         case 'include':
-            addFilter(field, 'contains', value, 'include');
+            addFilter(field, 'equals', value, 'include');
             break;
         case 'exclude':
-            addFilter(field, 'contains', value, 'exclude');
+            addFilter(field, 'equals', value, 'exclude');
             break;
         case 'include_exact':
             addFilter(field, 'equals', value, 'include');
