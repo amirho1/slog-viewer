@@ -123,6 +123,8 @@ time=2025-01-01T00:00:00Z level=info msg="Server started" port=8080
 
 **Example**: To hide all "http request" logs, right-click on a message containing "http request" and select "Exclude".
 
+**Tip**: File path values support both left-click (opens the file) and right-click (filter menu with an additional "Open file" option).
+
 ## Configuration
 
 Access via VSCode Settings → "Slog Viewer":

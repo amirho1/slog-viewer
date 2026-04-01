@@ -897,7 +897,6 @@ body {
 .log-message.filterable:hover,
 .json-line.filterable:hover {
     background: var(--selection-background, var(--vscode-editor-selectionBackground, rgba(255, 255, 255, 0.1)));
-    cursor: pointer;
     border-radius: 2px;
 }
 
